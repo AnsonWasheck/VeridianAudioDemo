@@ -64,6 +64,31 @@ export const LIGHT = {
   actPrimaryBg:"#ffffff",actPrimaryBorder:"rgba(22,95,178,0.22)",actPrimaryTxt:"rgba(22,95,178,0.78)",
 };
 
+// ── Inject App-level CSS once at module load ──────────────────────────────────
+// Kept completely separate from SoapScreen's injected CSS so neither bleeds
+// into the other. Uses `.rec-` prefix to avoid all collisions.
+(function injectAppCSS() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("recorder-screen-styles")) return;
+  const s = document.createElement("style");
+  s.id = "recorder-screen-styles";
+  s.textContent = `
+@keyframes hpop        { 0%,100%{transform:scale(1)} 50%{transform:scale(1.55)} }
+@keyframes ringOut     { 0%{transform:scale(1);opacity:0.7} 100%{transform:scale(1.7);opacity:0} }
+@keyframes statusPulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+/* Scoped tap-highlight kill — only inside .rec-root */
+.rec-root * { -webkit-tap-highlight-color: transparent; }
+
+/* Tap feedback for recorder buttons only */
+.rec-root .rec-btn:active {
+  opacity: 0.6 !important;
+  transform: scale(0.96) !important;
+}
+`;
+  document.head.appendChild(s);
+}());
+
 // ── useOrientation ────────────────────────────────────────────────────────────
 export function useOrientation() {
   const detect = useCallback(() => {
@@ -126,9 +151,19 @@ function Waveform({ recording, light, canvasWidth }) {
 
 // ── HapticDot ─────────────────────────────────────────────────────────────────
 const HapticDot = memo(function HapticDot({recording,T}){
-  return(<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,height:20}}>
-    {[0,1,2].map(i=>(<div key={i} style={{width:recording?5:3,height:recording?5:3,borderRadius:"50%",background:recording?`${T.hapticActive}${0.9-i*0.2})`:T.hapticIdle,boxShadow:recording?`0 0 ${7+i*2}px ${T.hapticGlow}`:"none",transition:"all 0.4s ease",animation:recording?`hpop 1.1s ease-in-out ${i*0.16}s infinite`:"none"}}/>))}
-  </div>);
+  return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,height:20}}>
+      {[0,1,2].map(i=>(
+        <div key={i} style={{
+          width:recording?5:3, height:recording?5:3, borderRadius:"50%",
+          background:recording?`${T.hapticActive}${0.9-i*0.2})`:T.hapticIdle,
+          boxShadow:recording?`0 0 ${7+i*2}px ${T.hapticGlow}`:"none",
+          transition:"all 0.4s ease",
+          animation:recording?`hpop 1.1s ease-in-out ${i*0.16}s infinite`:"none",
+        }}/>
+      ))}
+    </div>
+  );
 });
 
 // ── PatientCard ───────────────────────────────────────────────────────────────
@@ -160,17 +195,60 @@ const PatientCard = memo(function PatientCard({recording,T,portrait}){
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:7}}>
-          <div style={{background:T.chip,border:`1px solid ${T.chipBorder}`,borderRadius:5,padding:"4px 10px"}}><div style={{color:recording?T.labelTxtRec:T.labelTxt,fontSize:7,letterSpacing:"0.20em",textTransform:"uppercase",marginBottom:1}}>MRN</div><div style={{color:T.valueTxt,fontSize:10.5}}>MRN-0042817</div></div>
-          <button onClick={toggle} style={{borderRadius:5,padding:"5px 10px",fontSize:8,letterSpacing:"0.18em",textTransform:"uppercase",outline:"none",border:`1px solid ${T.hideBtnBorder}`,background:T.hideBtn,color:T.hideBtnTxt,display:"flex",alignItems:"center",gap:5}}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">{hidden?<><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>:<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>}</svg>
+          <div style={{background:T.chip,border:`1px solid ${T.chipBorder}`,borderRadius:5,padding:"4px 10px"}}>
+            <div style={{color:recording?T.labelTxtRec:T.labelTxt,fontSize:7,letterSpacing:"0.20em",textTransform:"uppercase",marginBottom:1}}>MRN</div>
+            <div style={{color:T.valueTxt,fontSize:10.5}}>MRN-0042817</div>
+          </div>
+          <button
+            className="rec-btn"
+            onClick={toggle}
+            style={{
+              borderRadius:5, padding:"5px 10px", fontSize:8, letterSpacing:"0.18em",
+              textTransform:"uppercase", outline:"none", cursor:"pointer",
+              border:`1px solid ${T.hideBtnBorder}`, background:T.hideBtn,
+              color:T.hideBtnTxt, display:"flex", alignItems:"center", gap:5,
+              touchAction:"manipulation", WebkitAppearance:"none",
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              {hidden
+                ? <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>
+                : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+              }
+            </svg>
             {hidden?"Show":"Hide"}
           </button>
         </div>
       </div>
       <div style={{maxHeight:hidden?0:320,overflow:"hidden",transition:"max-height 0.38s cubic-bezier(0.4,0,0.2,1)"}}>
         <div style={{padding:"13px 18px 15px",display:"grid",gridTemplateColumns:portrait?"1fr 1fr":"1fr",gap:portrait?"0 28px":0}}>
-          <div><SR label="Demographics"/><Row label="DOB" value="14 Mar 1968 (56 yrs)"/><Row label="Sex" value="Female"/><Row label="Insurance" value="BlueCross PPO"/><Row label="Language" value="English"/><SR label="Allergies"/><div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:4}}>{ALLERGIES.map(a=><Chip key={a}>{a}</Chip>)}</div></div>
-          <div><SR label="Encounter"/><Row label="Provider" value="Dr. S. Okafor, MD"/><Row label="Visit type" value="Follow-up"/><Row label="ID" value="ENC-20240311-04"/><Row label="Complaint" value="HTN review"/><SR label="Vitals — last visit"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"4px 5px"}}>{VITALS.map(v=>(<div key={v.label} style={{background:T.chip,border:`1px solid ${T.chipBorder}`,borderRadius:5,padding:"5px 7px"}}><div style={{color:recording?T.labelTxtRec:T.labelTxt,fontSize:7,letterSpacing:"0.18em",textTransform:"uppercase",marginBottom:2}}>{v.label}</div><div style={{color:T.valueTxt,fontSize:10.5}}>{v.value}</div></div>))}</div></div>
+          <div>
+            <SR label="Demographics"/>
+            <Row label="DOB" value="14 Mar 1968 (56 yrs)"/>
+            <Row label="Sex" value="Female"/>
+            <Row label="Insurance" value="BlueCross PPO"/>
+            <Row label="Language" value="English"/>
+            <SR label="Allergies"/>
+            <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:4}}>
+              {ALLERGIES.map(a=><Chip key={a}>{a}</Chip>)}
+            </div>
+          </div>
+          <div>
+            <SR label="Encounter"/>
+            <Row label="Provider" value="Dr. S. Okafor, MD"/>
+            <Row label="Visit type" value="Follow-up"/>
+            <Row label="ID" value="ENC-20240311-04"/>
+            <Row label="Complaint" value="HTN review"/>
+            <SR label="Vitals — last visit"/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"4px 5px"}}>
+              {VITALS.map(v=>(
+                <div key={v.label} style={{background:T.chip,border:`1px solid ${T.chipBorder}`,borderRadius:5,padding:"5px 7px"}}>
+                  <div style={{color:recording?T.labelTxtRec:T.labelTxt,fontSize:7,letterSpacing:"0.18em",textTransform:"uppercase",marginBottom:2}}>{v.label}</div>
+                  <div style={{color:T.valueTxt,fontSize:10.5}}>{v.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -178,26 +256,89 @@ const PatientCard = memo(function PatientCard({recording,T,portrait}){
 });
 
 // ── ActionButtons ─────────────────────────────────────────────────────────────
-const AB={display:"flex",alignItems:"center",gap:6,borderRadius:7,padding:"9px 14px",outline:"none",fontSize:9,letterSpacing:"0.18em",textTransform:"uppercase",transition:"all 0.25s ease",touchAction:"manipulation"};
+// Each button uses rec-btn class for tap feedback, plus explicit cursor:pointer
+// and touchAction:manipulation so iOS treats them as tappable immediately.
+const AB = {
+  display:"flex", alignItems:"center", gap:6, borderRadius:7, padding:"9px 14px",
+  outline:"none", fontSize:9, letterSpacing:"0.18em", textTransform:"uppercase",
+  transition:"all 0.25s ease", touchAction:"manipulation", cursor:"pointer",
+  WebkitAppearance:"none",
+};
 
 const ActionButtons = memo(function ActionButtons({hasRecording,onDelete,onSoap,T}){
-  const [showMore,setShowMore]=useState(false);
-  const [soapDone,setSoapDone]=useState(false);
-  const VS=useMemo(()=>({danger:{bg:T.actDangerBg,border:T.actDangerBorder,txt:T.actDangerTxt},primary:{bg:T.actPrimaryBg,border:T.actPrimaryBorder,txt:T.actPrimaryTxt},normal:{bg:T.actBg,border:T.actBorder,txt:T.actTxt}}),[T.actDangerBg,T.actDangerBorder,T.actDangerTxt,T.actPrimaryBg,T.actPrimaryBorder,T.actPrimaryTxt,T.actBg,T.actBorder,T.actTxt]);
-  if(!hasRecording)return null;
-  const Btn=({onClick,variant="normal",children})=>{const[h,sh]=useState(false);const v=VS[variant];return(<button onClick={onClick} onMouseEnter={()=>sh(true)} onMouseLeave={()=>sh(false)} style={{...AB,background:v.bg,border:`1px solid ${v.border}`,color:v.txt,boxShadow:T.actShadow,opacity:h?1:0.92,transform:h?"translateY(-1px)":"none"}}>{children}</button>);};
+  const [showMore,setShowMore] = useState(false);
+  const [soapDone,setSoapDone] = useState(false);
+
+  const VS = useMemo(()=>({
+    danger:  {bg:T.actDangerBg,  border:T.actDangerBorder,  txt:T.actDangerTxt},
+    primary: {bg:T.actPrimaryBg, border:T.actPrimaryBorder, txt:T.actPrimaryTxt},
+    normal:  {bg:T.actBg,        border:T.actBorder,        txt:T.actTxt},
+  }),[T.actDangerBg,T.actDangerBorder,T.actDangerTxt,T.actPrimaryBg,T.actPrimaryBorder,T.actPrimaryTxt,T.actBg,T.actBorder,T.actTxt]);
+
+  if(!hasRecording) return null;
+
+  // Btn defined inside ActionButtons but ActionButtons itself is at module scope,
+  // so Btn is recreated each render of ActionButtons only — not on every parent render.
+  const Btn = ({onClick, variant="normal", children}) => {
+    const [hov, setHov] = useState(false);
+    const v = VS[variant];
+    return (
+      <button
+        className="rec-btn"
+        onClick={onClick}
+        onMouseEnter={()=>setHov(true)}
+        onMouseLeave={()=>setHov(false)}
+        style={{
+          ...AB,
+          background:v.bg,
+          border:`1px solid ${v.border}`,
+          color:v.txt,
+          boxShadow:T.actShadow,
+          opacity:hov?1:0.92,
+          transform:hov?"translateY(-1px)":"none",
+        }}
+      >
+        {children}
+      </button>
+    );
+  };
+
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
-      <div style={{display:"flex",alignItems:"center",gap:6,maxHeight:showMore?60:0,overflow:"hidden",transition:"max-height 0.32s cubic-bezier(0.4,0,0.2,1),opacity 0.25s ease",opacity:showMore?1:0}}>
-        <Btn><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export PDF</Btn>
-        <Btn><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy Transcript</Btn>
-        <Btn><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Send to EHR</Btn>
+      <div style={{
+        display:"flex", alignItems:"center", gap:6,
+        maxHeight:showMore?60:0, overflow:"hidden",
+        transition:"max-height 0.32s cubic-bezier(0.4,0,0.2,1),opacity 0.25s ease",
+        opacity:showMore?1:0,
+      }}>
+        <Btn>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Export PDF
+        </Btn>
+        <Btn>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy Transcript
+        </Btn>
+        <Btn>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Send to EHR
+        </Btn>
       </div>
+
       <div style={{display:"flex",alignItems:"center",gap:6}}>
-        <Btn variant="danger" onClick={onDelete}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>Delete</Btn>
-        <Btn onClick={()=>setShowMore(m=>!m)}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>{showMore?"Less":"More"}</Btn>
-        {/* ↓ THIS is the button that triggers navigation to SoapScreen */}
-        <Btn variant="primary" onClick={()=>{setSoapDone(true);onSoap();}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>{soapDone?"Regenerate SOAP":"SOAP Note"}</Btn>
+        <Btn variant="danger" onClick={onDelete}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          Delete
+        </Btn>
+        <Btn onClick={()=>setShowMore(m=>!m)}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          {showMore?"Less":"More"}
+        </Btn>
+        {/* ↓ THIS triggers navigation to SoapScreen */}
+        <Btn variant="primary" onClick={()=>{ setSoapDone(true); onSoap(); }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          {soapDone?"Regenerate SOAP":"SOAP Note"}
+        </Btn>
       </div>
     </div>
   );
@@ -205,42 +346,90 @@ const ActionButtons = memo(function ActionButtons({hasRecording,onDelete,onSoap,
 
 // ── RecordButton ──────────────────────────────────────────────────────────────
 const RINGS=[0,1,2];
-const RecordButton=memo(function RecordButton({recording,onToggle,T}){
-  const [press,setPress]=useState(false);
-  const onS=useCallback((e)=>{e.preventDefault();setPress(true);},[]);
-  const onE=useCallback((e)=>{e.preventDefault();setPress(false);onToggle();},[onToggle]);
-  const onC=useCallback((e)=>{e.preventDefault();setPress(false);},[]);
+const RecordButton = memo(function RecordButton({recording,onToggle,T}){
+  const [press,setPress] = useState(false);
+  const onS = useCallback((e)=>{ e.preventDefault(); setPress(true); },[]);
+  const onE = useCallback((e)=>{ e.preventDefault(); setPress(false); onToggle(); },[onToggle]);
+  const onC = useCallback((e)=>{ e.preventDefault(); setPress(false); },[]);
   return(
     <div style={{position:"relative",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,width:110,height:110}}>
-      {recording&&RINGS.map(i=>(<div key={i} style={{position:"absolute",width:110,height:110,borderRadius:"50%",border:`1px solid ${T.ringColor}${0.13-i*0.04})`,animation:`ringOut 2.6s ease-out ${i*0.75}s infinite`,pointerEvents:"none"}}/>))}
-      <button onMouseDown={onS} onMouseUp={onE} onMouseLeave={onC} onTouchStart={onS} onTouchEnd={onE} onTouchCancel={onC}
-        style={{width:84,height:84,borderRadius:"50%",background:T.btnBg,border:`1px solid ${recording?T.btnBorderRec:T.btnBorder}`,boxShadow:recording?T.btnShadowRec:T.btnShadow,display:"flex",alignItems:"center",justifyContent:"center",outline:"none",transform:press?"scale(0.90)":"scale(1)",transition:"transform 0.13s ease,box-shadow 0.8s ease,border-color 0.8s ease",touchAction:"manipulation",WebkitAppearance:"none",flexShrink:0}}>
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={recording?T.micStrokeRec:T.micStroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{transition:"stroke 0.8s ease",pointerEvents:"none"}}><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="9" y1="22" x2="15" y2="22"/></svg>
+      {recording && RINGS.map(i=>(
+        <div key={i} style={{
+          position:"absolute", width:110, height:110, borderRadius:"50%",
+          border:`1px solid ${T.ringColor}${0.13-i*0.04})`,
+          animation:`ringOut 2.6s ease-out ${i*0.75}s infinite`,
+          pointerEvents:"none",
+        }}/>
+      ))}
+      <button
+        onMouseDown={onS} onMouseUp={onE} onMouseLeave={onC}
+        onTouchStart={onS} onTouchEnd={onE} onTouchCancel={onC}
+        style={{
+          width:84, height:84, borderRadius:"50%",
+          background:T.btnBg,
+          border:`1px solid ${recording?T.btnBorderRec:T.btnBorder}`,
+          boxShadow:recording?T.btnShadowRec:T.btnShadow,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          outline:"none", cursor:"pointer",
+          transform:press?"scale(0.90)":"scale(1)",
+          transition:"transform 0.13s ease,box-shadow 0.8s ease,border-color 0.8s ease",
+          touchAction:"manipulation", WebkitAppearance:"none", flexShrink:0,
+        }}
+      >
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+          stroke={recording?T.micStrokeRec:T.micStroke}
+          strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+          style={{transition:"stroke 0.8s ease",pointerEvents:"none"}}
+        >
+          <rect x="9" y="2" width="6" height="12" rx="3"/>
+          <path d="M5 10a7 7 0 0 0 14 0"/>
+          <line x1="12" y1="19" x2="12" y2="22"/>
+          <line x1="9" y1="22" x2="15" y2="22"/>
+        </svg>
       </button>
     </div>
   );
 });
 
-const TODAY=new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+const TODAY = new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
 
-// ── App (Screen 1) ────────────────────────────────────────────────────────────
+// ── RecorderScreen (Screen 1) ─────────────────────────────────────────────────
 // Props:
 //   onNavigateToSoap() — called when user taps "SOAP Note"; defined in main.jsx
 //   light / setLight   — passed from main.jsx so theme persists across screens
 //   portrait           — passed from main.jsx's useOrientation()
 export default function RecorderScreen({ onNavigateToSoap, light, setLight, portrait }) {
-  const [recording,setRecording]=useState(false);
-  const [hasRecording,setHasRecording]=useState(false);
-  const T=useMemo(()=>(light?LIGHT:DARK),[light]);
-  const W=portrait?IPAD_P_W:IPAD_L_W;
-  const H=portrait?IPAD_P_H:IPAD_L_H;
-  const handleToggle=useCallback(()=>setRecording(r=>{if(r)setHasRecording(true);return!r;}),[]);
-  const handleDelete=useCallback(()=>setHasRecording(false),[]);
-  const toggleLight=useCallback(()=>setLight(l=>!l),[setLight]);
-  const tbBtn={background:light?"rgba(22,95,178,0.10)":"rgba(255,255,255,0.06)",border:`1px solid ${light?"rgba(22,95,178,0.22)":"rgba(255,255,255,0.08)"}`,borderRadius:5,padding:"4px 11px",color:T.topbarSub,fontSize:8.5,letterSpacing:"0.18em",textTransform:"uppercase",outline:"none",display:"flex",alignItems:"center",gap:6,touchAction:"manipulation"};
+  const [recording,    setRecording]    = useState(false);
+  const [hasRecording, setHasRecording] = useState(false);
+  const T = useMemo(()=>(light?LIGHT:DARK),[light]);
+  const W = portrait?IPAD_P_W:IPAD_L_W;
+  const H = portrait?IPAD_P_H:IPAD_L_H;
+
+  const handleToggle  = useCallback(()=>setRecording(r=>{ if(r) setHasRecording(true); return !r; }),[]);
+  const handleDelete  = useCallback(()=>setHasRecording(false),[]);
+  const toggleLight   = useCallback(()=>setLight(l=>!l),[setLight]);
+
+  // Topbar button style — computed fresh each render since it depends on `light`
+  const tbBtn = {
+    background: light?"rgba(22,95,178,0.10)":"rgba(255,255,255,0.06)",
+    border:`1px solid ${light?"rgba(22,95,178,0.22)":"rgba(255,255,255,0.08)"}`,
+    borderRadius:5, padding:"4px 11px",
+    color:T.topbarSub,
+    fontSize:8.5, letterSpacing:"0.18em", textTransform:"uppercase",
+    outline:"none", display:"flex", alignItems:"center", gap:6,
+    touchAction:"manipulation", cursor:"pointer", WebkitAppearance:"none",
+  };
 
   return(
-    <div style={{width:W,height:H,background:T.bg,position:"relative",overflow:"hidden",fontFamily:"'DM Mono','Courier New',monospace",transition:"background 0.5s ease"}}>
+    <div
+      className="rec-root"
+      style={{
+        width:W, height:H, background:T.bg, position:"relative",
+        overflow:"hidden", fontFamily:"'DM Mono','Courier New',monospace",
+        transition:"background 0.5s ease",
+      }}
+    >
+      {/* Ambient glows */}
       <div style={{position:"absolute",width:"110%",height:"110%",borderRadius:"50%",background:`radial-gradient(ellipse at center,${T.glowCenter} 0%,transparent 55%)`,top:"50%",left:"50%",transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>
       <div style={{position:"absolute",width:"60%",height:"60%",borderRadius:"50%",background:`radial-gradient(ellipse at center,${T.glowRight} 0%,transparent 55%)`,top:"42%",right:"-8%",transform:"translateY(-50%)",pointerEvents:"none"}}/>
       <div style={{position:"absolute",width:"48%",height:"48%",borderRadius:"50%",background:`radial-gradient(ellipse at center,${T.glowLeft} 0%,transparent 55%)`,top:"55%",left:"-6%",transform:"translateY(-50%)",pointerEvents:"none"}}/>
@@ -248,19 +437,34 @@ export default function RecorderScreen({ onNavigateToSoap, light, setLight, port
       {/* Topbar */}
       <div style={{position:"absolute",top:0,left:0,right:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"20px 28px 0",zIndex:10}}>
         <div style={{display:"flex",alignItems:"center",gap:9}}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.topbarTxt} strokeWidth="1.6" strokeLinecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.topbarTxt} strokeWidth="1.6" strokeLinecap="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
           <span style={{color:T.topbarTxt,fontSize:10.5,letterSpacing:"0.24em",textTransform:"uppercase"}}>Veridian</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <button onClick={toggleLight} style={tbBtn}>{light?<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>:<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}{light?"Light":"Dark"}</button>
+          {/* Dark/Light toggle — uses rec-btn for tap feedback, explicit onClick */}
+          <button className="rec-btn" onClick={toggleLight} style={tbBtn}>
+            {light
+              ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            }
+            {light?"Light":"Dark"}
+          </button>
           <div style={{color:T.topbarSub,fontSize:9.5,letterSpacing:"0.16em",textTransform:"uppercase"}}>{TODAY}</div>
         </div>
       </div>
 
-      {/* Portrait layout */}
-      {portrait&&(<>
-        <div style={{position:"absolute",top:"38%",left:0,right:0,height:220,transform:"translateY(-54%)"}}><Waveform recording={recording} light={light} canvasWidth={IPAD_P_W}/></div>
-        <div style={{position:"absolute",top:"50%",left:0,right:0,transform:"translateY(calc(-50% + 120px))",display:"flex",justifyContent:"center"}}><HapticDot recording={recording} T={T}/></div>
+      {/* ── Portrait layout ── */}
+      {portrait && (<>
+        <div style={{position:"absolute",top:"38%",left:0,right:0,height:220,transform:"translateY(-54%)"}}>
+          <Waveform recording={recording} light={light} canvasWidth={IPAD_P_W}/>
+        </div>
+        <div style={{position:"absolute",top:"50%",left:0,right:0,transform:"translateY(calc(-50% + 120px))",display:"flex",justifyContent:"center"}}>
+          <HapticDot recording={recording} T={T}/>
+        </div>
         <div style={{position:"absolute",bottom:28,left:24,right:24,display:"flex",flexDirection:"column",gap:14}}>
           <PatientCard recording={recording} T={T} portrait={true}/>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:4}}>
@@ -270,10 +474,14 @@ export default function RecorderScreen({ onNavigateToSoap, light, setLight, port
         </div>
       </>)}
 
-      {/* Landscape layout */}
-      {!portrait&&(<>
-        <div style={{position:"absolute",top:"46%",left:0,right:0,height:180,transform:"translateY(-50%)"}}><Waveform recording={recording} light={light} canvasWidth={IPAD_L_W}/></div>
-        <div style={{position:"absolute",top:"50%",left:0,right:0,transform:"translateY(calc(-50% + 100px))",display:"flex",justifyContent:"center"}}><HapticDot recording={recording} T={T}/></div>
+      {/* ── Landscape layout ── */}
+      {!portrait && (<>
+        <div style={{position:"absolute",top:"46%",left:0,right:0,height:180,transform:"translateY(-50%)"}}>
+          <Waveform recording={recording} light={light} canvasWidth={IPAD_L_W}/>
+        </div>
+        <div style={{position:"absolute",top:"50%",left:0,right:0,transform:"translateY(calc(-50% + 100px))",display:"flex",justifyContent:"center"}}>
+          <HapticDot recording={recording} T={T}/>
+        </div>
         <div style={{position:"absolute",bottom:22,left:22,right:22,display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:16}}>
           <PatientCard recording={recording} T={T} portrait={false}/>
           <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10,flexShrink:0}}>
