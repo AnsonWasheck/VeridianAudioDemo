@@ -1,5 +1,5 @@
-// Router.jsx — screen navigation. Import this from your main.jsx entry point.
-import { useState, useEffect, useRef, useCallback } from "react";
+// Router.jsx
+import { useState, useEffect, useCallback } from "react";
 import RecorderScreen, { useOrientation } from "./App";
 import SoapScreen from "./SoapScreen";
 
@@ -12,10 +12,8 @@ const GLOBAL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap');
 
   html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
     overflow: hidden;
     overscroll-behavior: none;
     background: #08090f;
@@ -26,28 +24,38 @@ const GLOBAL_CSS = `
     -webkit-tap-highlight-color: transparent;
   }
 
-  button, input, textarea, select, a, [role="button"], label {
-    touch-action: manipulation;
-    cursor: pointer;
+  /*
+    PWA FIX: Every interactive element gets touch-action:manipulation + cursor:pointer.
+    This is the #1 fix for iOS standalone mode — without cursor:pointer Safari
+    does not consider the element "clickable" and silently drops the tap.
+  */
+  button, input, textarea, select, a, label, [role="button"] {
+    touch-action: manipulation !important;
+    cursor: pointer !important;
+    -webkit-tap-highlight-color: transparent;
+    /* Prevent iOS from zooming on double-tap of buttons */
+    user-select: none;
+    -webkit-user-select: none;
   }
 
-  /* Centers the scaled iPad frame in the browser window */
+  /* Center + scale the iPad frame in browser */
   #veridian-scaler {
     position: fixed;
-    top: 0; left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     background: #08090f;
+    /* 
+      PWA FIX: Do NOT set touch-action or pointer-events on this container.
+      Any restriction here kills button taps in standalone mode.
+    */
   }
 
   #veridian-frame {
     transform-origin: center center;
-    /* Crisp rendering at any scale */
-    image-rendering: crisp-edges;
     -webkit-font-smoothing: antialiased;
+    flex-shrink: 0;
   }
 
   @keyframes hpop        { 0%,100%{transform:scaleY(1);opacity:.7}  50%{transform:scaleY(2.4);opacity:1} }
@@ -59,25 +67,12 @@ const GLOBAL_CSS = `
   @keyframes slideInFromRight { from{transform:translateX(60px);opacity:0} to{transform:translateX(0);opacity:1} }
 `;
 
-const INTERACTIVE_TAGS = new Set(["BUTTON", "INPUT", "TEXTAREA", "SELECT", "A", "LABEL"]);
-
-function isInteractive(el) {
-  if (!el || el === document.body || el === document.documentElement) return false;
-  if (INTERACTIVE_TAGS.has(el.tagName)) return true;
-  if (el.getAttribute?.("role") === "button") return true;
-  if (el.hasAttribute?.("tabindex")) return true;
-  return isInteractive(el.parentElement);
-}
-
-// Compute the uniform scale that fits the iPad frame inside the window
-// with a small margin so it never touches the edges.
 function computeScale(portrait) {
-  const MARGIN = 0.97; // 97% of available space
-  const frameW = portrait ? IPAD_P_W : IPAD_L_W;
-  const frameH = portrait ? IPAD_P_H : IPAD_L_H;
-  const scaleX = (window.innerWidth  * MARGIN) / frameW;
-  const scaleY = (window.innerHeight * MARGIN) / frameH;
-  return Math.min(scaleX, scaleY, 1); // never scale UP, only down
+  const fw = portrait ? IPAD_P_W : IPAD_L_W;
+  const fh = portrait ? IPAD_P_H : IPAD_L_H;
+  const sx = (window.innerWidth  * 0.97) / fw;
+  const sy = (window.innerHeight * 0.97) / fh;
+  return Math.min(sx, sy, 1);
 }
 
 export default function Router() {
@@ -85,9 +80,7 @@ export default function Router() {
   const [light,  setLight]  = useState(false);
   const portrait = useOrientation();
   const [scale,  setScale]  = useState(() => computeScale(true));
-  const touchOnInteractive = useRef(false);
 
-  // Recompute scale on resize or orientation change
   const updateScale = useCallback(() => {
     setScale(computeScale(portrait));
   }, [portrait]);
@@ -98,7 +91,6 @@ export default function Router() {
     return () => window.removeEventListener("resize", updateScale);
   }, [updateScale]);
 
-  // Inject global CSS
   useEffect(() => {
     const el = document.createElement("style");
     el.textContent = GLOBAL_CSS;
@@ -106,24 +98,30 @@ export default function Router() {
     return () => document.head.removeChild(el);
   }, []);
 
-  // Touch handling — passive touchstart so click is never blocked,
-  // touchmove preventDefault only for non-interactive elements.
+  /*
+    PWA FIX: Only block touchmove (prevents rubber-band scroll).
+    NEVER call preventDefault on touchstart — it kills onClick in PWA mode.
+    NEVER block touchend — iOS needs it to fire the click event.
+  */
   useEffect(() => {
-    const onTouchStart = (e) => {
-      touchOnInteractive.current = isInteractive(e.target);
-    };
     const onTouchMove = (e) => {
-      if (!touchOnInteractive.current) e.preventDefault();
+      // Allow scroll inside elements that are actually scrollable
+      let el = e.target;
+      while (el && el !== document.body) {
+        const style = window.getComputedStyle(el);
+        const overflow = style.overflowY;
+        if ((overflow === "auto" || overflow === "scroll") && el.scrollHeight > el.clientHeight) {
+          return; // let it scroll naturally
+        }
+        el = el.parentElement;
+      }
+      e.preventDefault();
     };
-    document.addEventListener("touchstart", onTouchStart, { passive: true });
-    document.addEventListener("touchmove",  onTouchMove,  { passive: false });
-    return () => {
-      document.removeEventListener("touchstart", onTouchStart);
-      document.removeEventListener("touchmove",  onTouchMove);
-    };
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => document.removeEventListener("touchmove", onTouchMove);
   }, []);
 
-  // Keyboard shortcut: O = toggle light/dark
+  // Dev shortcut: O key toggles theme
   useEffect(() => {
     const h = (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
@@ -138,27 +136,16 @@ export default function Router() {
 
   return (
     <div id="veridian-scaler">
-      {/*
-        The frame div is exactly iPad-sized. CSS scale() shrinks it to fit
-        the browser window. Because scale() does not affect layout (the element
-        still occupies its original pixel footprint in the DOM), we also
-        set explicit width/height so the centering flexbox works correctly.
-
-        Critically: scale() does NOT affect pointer event coordinates in modern
-        browsers — the browser maps click/touch positions through the transform
-        automatically, so all hit targets remain accurate at any zoom level.
-      */}
       <div
         id="veridian-frame"
         style={{
-          width:  frameW,
+          width: frameW,
           height: frameH,
           transform: `scale(${scale})`,
           transformOrigin: "center center",
           overflow: "hidden",
           borderRadius: scale < 1 ? 16 : 0,
-          boxShadow: scale < 1 ? "0 20px 80px rgba(0,0,0,0.8)" : "none",
-          flexShrink: 0,
+          boxShadow: scale < 1 ? "0 24px 80px rgba(0,0,0,0.85)" : "none",
         }}
       >
         {screen === "recorder" && (
