@@ -1,0 +1,394 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+
+const W = 1366;
+const H = 1024;
+
+// ── Fluid Wave Canvas ─────────────────────────────────────────────────────────
+function Waveform({ recording }) {
+  const canvasRef = useRef(null);
+  const stateRef = useRef({ time: 0, raf: null, energy: 0 });
+
+  // Each wave layer: { color, alpha, freqs[], amps[], speed, yOffset }
+  const LAYERS = [
+    // Back layer — widest, deep indigo/purple fill
+    {
+      fills: ["#3b1fa8", "#6234d4", "#4a22bc"],
+      alpha: 0.72,
+      freqs: [0.55, 1.1, 1.8, 0.38],
+      amps:  [0.38, 0.24, 0.14, 0.28],
+      speed: 1.4,
+      baseY: 0.50,
+    },
+    // Mid layer — violet / mid blue
+    {
+      fills: ["#5b2ce0", "#7b4af5", "#4fc3e8"],
+      alpha: 0.65,
+      freqs: [0.62, 1.25, 2.1, 0.44],
+      amps:  [0.30, 0.20, 0.11, 0.23],
+      speed: 1.9,
+      baseY: 0.50,
+    },
+    // Front layer — bright cyan/teal highlight
+    {
+      fills: ["#38b8e8", "#62d8f5", "#4ab8d8"],
+      alpha: 0.55,
+      freqs: [0.70, 1.45, 2.4, 0.52],
+      amps:  [0.22, 0.16, 0.09, 0.18],
+      speed: 2.5,
+      baseY: 0.50,
+    },
+    // Top sheen — almost white cyan
+    {
+      fills: ["#7ae8ff", "#a8f0ff", "#60d8f0"],
+      alpha: 0.28,
+      freqs: [0.85, 1.7, 2.8, 0.6],
+      amps:  [0.15, 0.11, 0.07, 0.13],
+      speed: 3.2,
+      baseY: 0.50,
+    },
+  ];
+
+  // Edge weight: 0 at x=0 and x=cw, 1 in the middle
+  const edgeWeight = useCallback((norm) => {
+    // Use a raised sine so edges are strongly pulled to zero amplitude
+    return Math.pow(Math.sin(norm * Math.PI), 1.8);
+  }, []);
+
+  const getTopY = useCallback((layer, x, cw, ch, t, energyMul) => {
+    const norm = x / cw;
+    const ew = edgeWeight(norm);
+    let displacement = 0;
+    layer.freqs.forEach((f, i) => {
+      displacement += Math.sin(norm * Math.PI * 2 * f + t * layer.speed + i * 1.1)
+                      * layer.amps[i] * energyMul;
+    });
+    // Scale displacement by edge weight — edges always return to baseY
+    const y = layer.baseY - displacement * ew;
+    return y * ch;
+  }, [edgeWeight]);
+
+  const getBottomY = useCallback((layer, x, cw, ch, t, energyMul) => {
+    const norm = x / cw;
+    const ew = edgeWeight(norm);
+    let displacement = 0;
+    // Different phase offsets (+ Math.PI * 1.3 per freq) give independent randomness
+    layer.freqs.forEach((f, i) => {
+      displacement += Math.sin(norm * Math.PI * 2 * f + t * layer.speed * 0.85 + i * 2.7 + Math.PI * 1.3)
+                      * layer.amps[i] * energyMul;
+    });
+    // Bottom goes downward (+displacement)
+    const y = layer.baseY + displacement * ew;
+    return y * ch;
+  }, [edgeWeight]);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const cw = canvas.width;
+    const ch = canvas.height;
+    const s = stateRef.current;
+
+    const dt = recording ? 0.022 : 0.009;
+    s.time += dt;
+    const targetEnergy = recording ? 1.0 : 0.28;
+    s.energy += (targetEnergy - s.energy) * 0.04;
+    const em = 0.28 + s.energy * 0.72;
+
+    ctx.clearRect(0, 0, cw, ch);
+
+    // Subtle dark ambient glow in center
+    const bgG = ctx.createRadialGradient(cw * 0.5, ch * 0.5, 0, cw * 0.5, ch * 0.5, cw * 0.45);
+    bgG.addColorStop(0, "rgba(70,30,180,0.06)");
+    bgG.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = bgG;
+    ctx.fillRect(0, 0, cw, ch);
+
+    LAYERS.forEach((layer, li) => {
+      // Build gradient from layer fills
+      const grad = ctx.createLinearGradient(0, 0, cw, 0);
+      layer.fills.forEach((c, i) => grad.addColorStop(i / (layer.fills.length - 1), c));
+
+      // ── Draw filled wave shape (upper half) ────────────────────────────
+      ctx.save();
+      ctx.globalAlpha = layer.alpha;
+
+      ctx.beginPath();
+      // Upper wave edge (left to right)
+      for (let x = 0; x <= cw; x += 2) {
+        const y = getTopY(layer, x, cw, ch, s.time, em);
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      // Bottom wave edge (right to left) — independent randomness
+      for (let x = cw; x >= 0; x -= 2) {
+        const y = getBottomY(layer, x, cw, ch, s.time, em);
+        ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.restore();
+
+      // ── Glowing top edge line ───────────────────────────────────────────
+      ctx.save();
+      ctx.globalAlpha = layer.alpha * 0.9;
+      ctx.strokeStyle = layer.fills[layer.fills.length - 1];
+      ctx.lineWidth = li === 0 ? 2.5 : li === 1 ? 2 : 1.5;
+      ctx.shadowColor = layer.fills[1];
+      ctx.shadowBlur = li < 2 ? 14 : 8;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.beginPath();
+
+      for (let x = 0; x <= cw; x += 2) {
+        const y = getTopY(layer, x, cw, ch, s.time, em);
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      // ── Glowing bottom edge line (independent) ─────────────────────────
+      ctx.save();
+      ctx.globalAlpha = layer.alpha * 0.7;
+      ctx.strokeStyle = layer.fills[layer.fills.length - 1];
+      ctx.lineWidth = li === 0 ? 2.5 : li === 1 ? 2 : 1.5;
+      ctx.shadowColor = layer.fills[1];
+      ctx.shadowBlur = li < 2 ? 14 : 8;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.beginPath();
+
+      for (let x = 0; x <= cw; x += 2) {
+        const y = getBottomY(layer, x, cw, ch, s.time, em);
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // ── Top specular shimmer line ───────────────────────────────────────────
+    {
+      const shimmerLayer = LAYERS[2];
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      const shimG = ctx.createLinearGradient(0, 0, cw, 0);
+      shimG.addColorStop(0,    "rgba(200,245,255,0)");
+      shimG.addColorStop(0.15, "rgba(200,245,255,0.7)");
+      shimG.addColorStop(0.5,  "rgba(255,255,255,0.9)");
+      shimG.addColorStop(0.85, "rgba(200,245,255,0.7)");
+      shimG.addColorStop(1,    "rgba(200,245,255,0)");
+      ctx.strokeStyle = shimG;
+      ctx.lineWidth = 1;
+      ctx.shadowColor = "#b0f0ff";
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      for (let x = 0; x <= cw; x += 2) {
+        const y = getTopY(shimmerLayer, x, cw, ch, s.time, em) - 1;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    s.raf = requestAnimationFrame(draw);
+  }, [recording, getTopY, getBottomY]);
+
+  useEffect(() => {
+    const s = stateRef.current;
+    s.raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(s.raf);
+  }, [draw]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={W}
+      height={220}
+      style={{ width: "100%", height: "100%", display: "block" }}
+    />
+  );
+}
+
+// ── Haptic dot row ────────────────────────────────────────────────────────────
+function HapticDot({ recording }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, height: 20 }}>
+      {[0, 1, 2].map(i => (
+        <div key={i} style={{
+          width: recording ? 5 : 3,
+          height: recording ? 5 : 3,
+          borderRadius: "50%",
+          background: recording ? `rgba(110,220,255,${0.9 - i * 0.2})` : "rgba(255,255,255,0.1)",
+          boxShadow: recording ? `0 0 ${7 + i * 2}px rgba(100,210,255,0.7)` : "none",
+          transition: "all 0.4s ease",
+          animation: recording ? `hpop 1.1s ease-in-out ${i * 0.16}s infinite` : "none",
+        }} />
+      ))}
+      <style>{`@keyframes hpop {
+        0%,100%{transform:scaleY(1);opacity:0.7}
+        50%{transform:scaleY(2.4);opacity:1}
+      }`}</style>
+    </div>
+  );
+}
+
+// ── Patient card ──────────────────────────────────────────────────────────────
+function PatientCard() {
+  return (
+    <div style={{
+      background: "linear-gradient(135deg,rgba(255,255,255,0.052) 0%,rgba(255,255,255,0.018) 100%)",
+      backdropFilter: "blur(28px)",
+      WebkitBackdropFilter: "blur(28px)",
+      border: "1px solid rgba(255,255,255,0.07)",
+      borderRadius: 16,
+      padding: "16px 22px",
+      minWidth: 215,
+      boxShadow: "0 8px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)",
+    }}>
+      <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:12 }}>
+        <div style={{
+          width:30, height:30, borderRadius:"50%",
+          background:"linear-gradient(135deg,rgba(80,60,220,0.25),rgba(70,190,240,0.15))",
+          border:"1px solid rgba(100,180,255,0.2)",
+          display:"flex", alignItems:"center", justifyContent:"center",
+        }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(140,200,255,0.8)" strokeWidth="1.8" strokeLinecap="round">
+            <circle cx="12" cy="7" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/>
+          </svg>
+        </div>
+        <div>
+          <div style={{ color:"rgba(255,255,255,0.75)", fontSize:13, fontWeight:500, letterSpacing:"0.04em" }}>Eleanor Voss</div>
+          <div style={{ color:"rgba(100,200,255,0.45)", fontSize:9, letterSpacing:"0.18em", textTransform:"uppercase", marginTop:2 }}>Patient</div>
+        </div>
+      </div>
+      <div style={{ height:1, background:"linear-gradient(90deg,rgba(100,160,255,0.1),rgba(80,220,240,0.07),transparent)", marginBottom:10 }} />
+      {[
+        { icon: "cal", label:"DOB", value:"14 Mar 1968" },
+        { icon: "id",  label:"MRN", value:"MRN-0042817" },
+      ].map(r => (
+        <div key={r.label} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:7 }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(100,190,255,0.4)" strokeWidth="1.6" strokeLinecap="round">
+            {r.icon==="cal"
+              ? <><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></>
+              : <><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3H8"/></>}
+          </svg>
+          <div>
+            <div style={{ color:"rgba(255,255,255,0.16)", fontSize:8, letterSpacing:"0.2em", textTransform:"uppercase" }}>{r.label}</div>
+            <div style={{ color:"rgba(255,255,255,0.48)", fontSize:11, letterSpacing:"0.03em", marginTop:1 }}>{r.value}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Record button ─────────────────────────────────────────────────────────────
+function RecordButton({ recording, onToggle }) {
+  const [press, setPress] = useState(false);
+  return (
+    <div style={{ position:"relative", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      {recording && [0,1].map(i => (
+        <div key={i} style={{
+          position:"absolute", width:96, height:96, borderRadius:"50%",
+          border:`1px solid rgba(80,180,255,${0.18 - i*0.06})`,
+          animation:`ringOut 2.2s ease-out ${i*0.75}s infinite`,
+          pointerEvents:"none",
+        }} />
+      ))}
+      <button
+        onMouseDown={() => setPress(true)}
+        onMouseUp={() => { setPress(false); onToggle(); }}
+        onMouseLeave={() => setPress(false)}
+        style={{
+          width:72, height:72, borderRadius:"50%",
+          background: recording
+            ? "linear-gradient(135deg,rgba(70,50,200,0.28),rgba(50,180,240,0.18))"
+            : "linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03))",
+          border: recording
+            ? "1.5px solid rgba(90,170,255,0.38)"
+            : "1.5px solid rgba(255,255,255,0.09)",
+          boxShadow: recording
+            ? "0 0 28px rgba(70,130,255,0.22), 0 0 56px rgba(50,160,240,0.1), inset 0 1px 0 rgba(255,255,255,0.1)"
+            : "0 4px 24px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)",
+          display:"flex", alignItems:"center", justifyContent:"center",
+          cursor:"pointer", outline:"none",
+          transform: press ? "scale(0.91)" : "scale(1)",
+          transition:"transform 0.14s ease, box-shadow 0.35s ease, background 0.35s ease, border-color 0.35s ease",
+        }}>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none"
+          stroke={recording ? "rgba(160,220,255,0.92)" : "rgba(255,255,255,0.42)"}
+          strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="9" y="2" width="6" height="12" rx="3"/>
+          <path d="M5 10a7 7 0 0 0 14 0"/>
+          <line x1="12" y1="19" x2="12" y2="22"/>
+          <line x1="9" y1="22" x2="15" y2="22"/>
+        </svg>
+      </button>
+      <style>{`@keyframes ringOut{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.85);opacity:0}}`}</style>
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+export default function App() {
+  const [recording, setRecording] = useState(false);
+
+  return (
+    <div style={{
+      width: W, height: H,
+      background: "#070810",
+      position: "relative",
+      overflow: "hidden",
+      fontFamily: "'DM Mono','Courier New',monospace",
+    }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap');*{box-sizing:border-box;margin:0;padding:0}`}</style>
+
+      {/* Ambient depth glows */}
+      <div style={{ position:"absolute", width:700, height:350, borderRadius:"50%",
+        background:"radial-gradient(ellipse,rgba(60,30,180,0.09) 0%,transparent 70%)",
+        top:"50%", left:"50%", transform:"translate(-50%,-50%)", pointerEvents:"none" }} />
+      <div style={{ position:"absolute", width:400, height:200, borderRadius:"50%",
+        background:"radial-gradient(ellipse,rgba(40,160,220,0.05) 0%,transparent 70%)",
+        top:"50%", right:"8%", transform:"translateY(-50%)", pointerEvents:"none" }} />
+
+      {/* Top bar */}
+      <div style={{ position:"absolute", top:0, left:0, right:0,
+        display:"flex", alignItems:"center", justifyContent:"space-between", padding:"22px 36px 0" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(120,170,255,0.55)" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+          </svg>
+          <span style={{ color:"rgba(255,255,255,0.3)", fontSize:11, letterSpacing:"0.22em", textTransform:"uppercase" }}>Scribe</span>
+        </div>
+        <div style={{ color:"rgba(255,255,255,0.1)", fontSize:10, letterSpacing:"0.16em", textTransform:"uppercase" }}>
+          {new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}
+        </div>
+      </div>
+
+      {/* Waveform — vertically centered */}
+      <div style={{ position:"absolute", top:"50%", left:0, right:0,
+        height:240, transform:"translateY(-54%)" }}>
+        <Waveform recording={recording} />
+      </div>
+
+      {/* Haptic dots below wave */}
+      <div style={{ position:"absolute", top:"50%", left:0, right:0,
+        transform:"translateY(calc(-50% + 138px))",
+        display:"flex", justifyContent:"center" }}>
+        <HapticDot recording={recording} />
+      </div>
+
+      {/* Bottom row */}
+      <div style={{ position:"absolute", bottom:32, left:32, right:32,
+        display:"flex", alignItems:"flex-end", justifyContent:"space-between" }}>
+        <PatientCard />
+        <RecordButton recording={recording} onToggle={() => setRecording(r => !r)} />
+      </div>
+    </div>
+  );
+}
