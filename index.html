@@ -1,10 +1,32 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>audio</title>
+
+    <!--
+      viewport: width=device-width prevents iOS from scaling the layout.
+      viewport-fit=cover extends into the notch/home indicator area so
+      safe-area-inset-* env() vars work correctly in standalone mode.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+
+    <!-- Tell iOS this can run as a standalone app -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+
+    <!-- Status bar style: black-translucent lets your app extend under the notch -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- App name shown under the icon on homescreen -->
+    <meta name="apple-mobile-web-app-title" content="Veridian" />
+
+    <!-- Theme colour (matches your dark bg) -->
+    <meta name="theme-color" content="#08090f" />
+
+    <title>Veridian</title>
+    <link rel="manifest" href="/manifest.json" />
   </head>
   <body>
     <div id="root"></div>
